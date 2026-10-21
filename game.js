@@ -998,9 +998,9 @@
       this.updateScoreUI();
 
       this.cardContent.innerHTML = isNewBest ? `
-        <h1>NEW<br>BEST!</h1>
+        <h1>YOU<br>WIN!</h1>
         <div class="subtitle">${finalDistance} m</div>
-        <p class="small">ENTER YOUR NAME TO SAVE YOUR RECORD</p>
+        <p class="small">NEW BEST SCORE · ENTER YOUR NAME</p>
         <form id="recordForm">
           <input class="name-input" id="playerName" name="playerName" maxlength="20" autocomplete="nickname" placeholder="Your name" required>
           <button class="primary-btn" type="submit">SAVE SCORE</button>
