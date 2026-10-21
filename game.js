@@ -302,9 +302,9 @@
     }
 
     getDifficultyTier(distance) {
-      if (distance < 300) return 'EASY';
-      if (distance < 800) return 'NORMAL';
-      if (distance < 1500) return 'HARD';
+      if (distance < 200) return 'EASY';
+      if (distance < 500) return 'NORMAL';
+      if (distance < 1000) return 'HARD';
       return 'EXTREME';
     }
 
@@ -318,22 +318,24 @@
       // 2. NARROW PRECISION PLATFORM (Narrow width: 58-70px in EASY -> REQUIRES RELEASING SPACE)
       // 3. RECOVERY LANDING PLATFORM (Extra wide: 220-280px after narrow platforms)
 
-      const isNarrowPlatform = (this.platformCount % 4 === 0) || (tier !== 'EASY' && this.platformCount % 5 === 0);
-      const isStretchGap = !isNarrowPlatform && ((this.platformCount % 3 === 0) || (tier !== 'EASY' && this.platformCount % 2 === 0));
+      const narrowInterval = distance < 250 ? 5 : distance < 650 ? 4 : 3;
+      const extraNarrowPlatform = distance >= 650 && this.platformCount % (distance >= 1200 ? 5 : 7) === 0;
+      const isNarrowPlatform = this.platformCount % narrowInterval === 0 || extraNarrowPlatform;
+      const stretchInterval = distance < 250 ? 3 : 2;
+      const isStretchGap = !isNarrowPlatform && this.platformCount % stretchInterval === 0;
 
       let gap, width, height;
 
       if (prev.isNarrow) {
-        // Recovery Platform immediately after a narrow platform (Platform #5!)
-        // Small gap (32-42px), extra wide landing platform (220-280px)
+        // A recovery platform remains after each precision landing, gradually shrinking at higher scores.
         gap = Math.floor(this.rng.range(32, 42));
-        width = Math.floor(this.rng.range(220, 280));
+        const recoveryScale = Math.max(0.68, 1 - Math.max(0, distance - 200) / 2500);
+        width = Math.floor(this.rng.range(220, 280) * recoveryScale);
       } else if (isNarrowPlatform) {
-        // NARROW PRECISION PLATFORM: Small gap (35-45px), Narrow width (58-70px in EASY)
-        // Holding SPACE causes giant 170px stride to OVERSTEP this narrow platform into the gap!
-        // Releasing SPACE shortens stride to 44px, allowing clean landing!
+        // Precision platforms become slightly narrower as the score rises.
         gap = Math.floor(this.rng.range(35, 45));
-        width = (tier === 'EASY') ? Math.floor(this.rng.range(58, 70)) : Math.floor(this.rng.range(42, 55));
+        const narrowWidth = tier === 'EASY' ? [58, 70] : tier === 'NORMAL' ? [48, 58] : tier === 'HARD' ? [44, 52] : [40, 48];
+        width = Math.floor(this.rng.range(narrowWidth[0], narrowWidth[1]));
       } else if (isStretchGap) {
         // Wide Gap requiring MAX_LEG_LENGTH stretch (80px to 175px)
         switch (tier) {
@@ -492,6 +494,8 @@
       this.vy = 0;
       this.bodyW = 26;
       this.bodyH = 32;
+      const expressions = ['sad', 'happy', 'angry', 'surprised'];
+      this.faceExpression = expressions[Math.floor(Math.random() * expressions.length)];
       this.legLength = MIN_LEG_LENGTH;
       this.targetLegLength = MIN_LEG_LENGTH;
 
@@ -641,16 +645,110 @@
       this.drawLeg(ctx, this.leftLeg, hipX, hipY, camX);
       this.drawLeg(ctx, this.rightLeg, hipX, hipY, camX);
 
-      // Body (Black rectangle)
+      // Original square head silhouette.
       ctx.fillStyle = '#111111';
       ctx.fillRect(sx, sy, this.bodyW, this.bodyH);
 
-      // White eyes (funny minimalist look)
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(sx + 6, sy + 8, 4, 4);
-      ctx.fillRect(sx + 16, sy + 8, 4, 4);
+      this.drawFace(ctx, sx, sy);
+      this.drawCrown(ctx, sx, sy);
 
       ctx.restore();
+    }
+
+    drawCrown(ctx, sx, sy) {
+      ctx.save();
+      ctx.fillStyle = '#f4f4f0';
+      ctx.strokeStyle = '#111111';
+      ctx.lineWidth = 1.5;
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(sx + 4, sy + 1);
+      ctx.lineTo(sx + 4, sy - 6);
+      ctx.lineTo(sx + 9, sy - 3);
+      ctx.lineTo(sx + 13, sy - 10);
+      ctx.lineTo(sx + 17, sy - 3);
+      ctx.lineTo(sx + 22, sy - 6);
+      ctx.lineTo(sx + 22, sy + 1);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#111111';
+      ctx.beginPath();
+      ctx.arc(sx + 13, sy - 5, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    drawFace(ctx, sx, sy) {
+      const leftEye = [sx + 8, sy + 12];
+      const rightEye = [sx + 18, sy + 12];
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+
+      const drawOpenEyes = () => {
+        for (const [x, y] of [leftEye, rightEye]) {
+          ctx.beginPath();
+          ctx.ellipse(x, y, 2.5, 3, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      };
+
+      if (this.faceExpression === 'happy') {
+        // Closed crescent eyes and an upward smile.
+        for (const [x, y] of [leftEye, rightEye]) {
+          ctx.beginPath();
+          ctx.moveTo(x - 3, y);
+          ctx.quadraticCurveTo(x, y - 4, x + 3, y);
+          ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.moveTo(sx + 8, sy + 21);
+        ctx.quadraticCurveTo(sx + 13, sy + 29, sx + 18, sy + 21);
+        ctx.stroke();
+      } else if (this.faceExpression === 'sad') {
+        drawOpenEyes();
+        // Brows tilt up toward the center; the mouth curves into a frown.
+        ctx.beginPath();
+        ctx.moveTo(sx + 4, sy + 7);
+        ctx.lineTo(sx + 10, sy + 9);
+        ctx.moveTo(sx + 16, sy + 9);
+        ctx.lineTo(sx + 22, sy + 7);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx + 9, sy + 25);
+        ctx.quadraticCurveTo(sx + 13, sy + 20, sx + 17, sy + 25);
+        ctx.stroke();
+      } else if (this.faceExpression === 'angry') {
+        drawOpenEyes();
+        // Brows angle down toward the center for an angry look.
+        ctx.beginPath();
+        ctx.moveTo(sx + 4, sy + 9);
+        ctx.lineTo(sx + 10, sy + 7);
+        ctx.moveTo(sx + 16, sy + 7);
+        ctx.lineTo(sx + 22, sy + 9);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx + 10, sy + 24);
+        ctx.lineTo(sx + 16, sy + 24);
+        ctx.stroke();
+      } else {
+        // Wide eyes and an upright open oval for surprise.
+        for (const [x, y] of [leftEye, rightEye]) {
+          ctx.beginPath();
+          ctx.ellipse(x, y, 3, 4, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.beginPath();
+        ctx.ellipse(sx + 13, sy + 23, 3.2, 4.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#111111';
+        ctx.beginPath();
+        ctx.ellipse(sx + 13, sy + 23, 1.5, 2.7, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     drawLeg(ctx, leg, hipX, hipY, camX) {
@@ -660,7 +758,7 @@
       const kneeY = leg.kneeY;
 
       ctx.strokeStyle = '#111111';
-      ctx.lineWidth = 8;
+      ctx.lineWidth = 6;
       ctx.lineCap = 'square';
       ctx.lineJoin = 'miter';
 
@@ -673,7 +771,7 @@
 
       // Foot square pad
       ctx.fillStyle = '#111111';
-      ctx.fillRect(footX - 8, footY - 3, 16, 6);
+      ctx.fillRect(footX - 6.5, footY - 2.5, 13, 5);
     }
   }
 
@@ -732,11 +830,15 @@
       this.cardContent = document.getElementById('cardContent');
       this.startBtn = document.getElementById('startBtn');
       this.audioBtn = document.getElementById('audioBtn');
+      this.pauseBtn = document.getElementById('pauseBtn');
       this.hintEl = document.getElementById('hint');
       this.controlHintEl = document.getElementById('controlHint');
 
       this.ytAdapter = new YouTubePlayablesAdapter();
       this.audioManager = new AudioManager();
+      this.music = new Audio('./assets/ocean-ambience.mp3');
+      this.music.loop = true;
+      this.music.volume = 0.16;
       this.inputManager = new InputManager(() => this.onInputTrigger());
       this.platformManager = new PlatformManager();
       this.player = new Player();
@@ -748,8 +850,10 @@
       this.camX = 0;
       this.distance = 0;
       this.bestScore = 0;
+      this.bestRecord = null;
 
       this.running = false;
+      this.paused = false;
       this.gameOver = false;
       this.lastTime = 0;
       this.screenShake = 0;
@@ -764,27 +868,36 @@
       // Detect mobile for touch controls hint
       if (this.inputManager.isTouchDevice) {
         this.hintEl.textContent = 'HOLD TO STRETCH';
-        this.controlHintEl.textContent = 'HOLD ANYWHERE TO MAKE YOUR STEPS WIDER';
+        this.controlHintEl.textContent = 'HOLD TO STRETCH · RELEASE ON NARROW PLATFORMS';
       }
 
       // Setup YT Playables integration
       this.ytAdapter.init(
         () => this.pause(),
         () => this.resume(),
-        (enabled) => this.audioManager.setMute(!enabled)
+        (enabled) => {
+          this.audioManager.setMute(!enabled);
+          this.music.muted = !enabled;
+        }
       );
+      this.music.muted = !this.ytAdapter.isAudioEnabled();
 
       // Load best score from YT SDK or LocalStorage
       const ytScore = await this.ytAdapter.loadScore();
-      const localScore = Number(localStorage.getItem('longlegs_best') || 0);
+      let storedRecord = null;
+      try { storedRecord = JSON.parse(localStorage.getItem('longlegs_best_record') || 'null'); } catch (e) {}
+      this.bestRecord = storedRecord && Number.isFinite(storedRecord.score) ? storedRecord : null;
+      const localScore = Math.max(Number(localStorage.getItem('longlegs_best') || 0), this.bestRecord?.score || 0);
       this.bestScore = Math.max(ytScore || 0, localScore);
       this.updateScoreUI();
 
       this.startBtn.addEventListener('click', () => this.start());
       this.audioBtn.addEventListener('click', () => {
         const isMuted = this.audioManager.toggleMute();
+        this.music.muted = isMuted;
         this.audioBtn.textContent = `AUDIO: ${isMuted ? 'OFF' : 'ON'}`;
       });
+      this.pauseBtn.addEventListener('click', () => this.togglePause());
 
       this.ytAdapter.notifyFirstFrameReady();
       this.ytAdapter.notifyGameReady();
@@ -803,19 +916,45 @@
 
     onInputTrigger() {
       this.audioManager.init();
+      if (this.paused) {
+        this.resume();
+        return;
+      }
       if (!this.running && !this.gameOver) {
         this.start();
       }
     }
 
     pause() {
+      if (this.gameOver || !this.running) return;
       this.running = false;
+      this.paused = true;
       this.audioManager.stopStretchSound();
+      this.music.pause();
+      this.cardContent.innerHTML = `
+        <h1>PAUSED</h1>
+        <p class="small">TAKE A BREATHER</p>
+        <button class="primary-btn" id="resumeBtn">RESUME</button>
+      `;
+      this.overlay.classList.remove('hidden');
+      document.getElementById('resumeBtn').addEventListener('click', () => this.resume());
+      this.pauseBtn.textContent = 'RESUME';
+      this.pauseBtn.disabled = false;
+    }
+
+    togglePause() {
+      if (this.paused) this.resume();
+      else this.pause();
     }
 
     resume() {
       if (!this.gameOver) {
+        this.paused = false;
         this.running = true;
+        this.overlay.classList.add('hidden');
+        this.pauseBtn.textContent = 'PAUSE';
+        this.pauseBtn.disabled = false;
+        this.music.play().catch(() => {});
       }
     }
 
@@ -828,14 +967,24 @@
       this.distance = 0;
       this.camX = 0;
       this.running = true;
+      this.paused = false;
       this.gameOver = false;
+      this.pauseBtn.textContent = 'PAUSE';
+      this.pauseBtn.disabled = false;
+      document.body.classList.remove('game-over');
       this.overlay.classList.add('hidden');
+      this.music.play().catch(() => {});
     }
 
     triggerGameOver() {
       if (this.gameOver) return;
       this.gameOver = true;
       this.running = false;
+      this.paused = false;
+      this.pauseBtn.textContent = 'PAUSE';
+      this.pauseBtn.disabled = true;
+      this.music.pause();
+      document.body.classList.add('game-over');
       this.screenShake = 14;
 
       const finalDistance = Math.floor(this.distance);
@@ -843,32 +992,67 @@
       if (finalDistance > this.bestScore) {
         this.bestScore = finalDistance;
         this.ytAdapter.sendScore(this.bestScore);
-        localStorage.setItem('longlegs_best', this.bestScore);
         isNewBest = true;
       }
 
       this.updateScoreUI();
 
-      this.cardContent.innerHTML = `
+      this.cardContent.innerHTML = isNewBest ? `
+        <h1>NEW<br>BEST!</h1>
+        <div class="subtitle">${finalDistance} m</div>
+        <p class="small">ENTER YOUR NAME TO SAVE YOUR RECORD</p>
+        <form id="recordForm">
+          <input class="name-input" id="playerName" name="playerName" maxlength="20" autocomplete="nickname" placeholder="Your name" required>
+          <button class="primary-btn" type="submit">SAVE SCORE</button>
+        </form>
+      ` : `
         <h1>FALL!</h1>
         <div class="subtitle">${finalDistance} m</div>
-        <p class="small">${isNewBest ? '★ NEW BEST SCORE! ★' : `BEST ${this.bestScore} m`}</p>
+        <p class="small">BEST ${this.bestScore} m${this.bestRecord?.name ? ` · ${this.escapeHTML(this.bestRecord.name)}` : ''}</p>
         <button class="primary-btn" id="restartBtn">TRY AGAIN</button>
       `;
       this.overlay.classList.remove('hidden');
+      if (isNewBest) {
+        document.getElementById('recordForm').addEventListener('submit', (event) => {
+          event.preventDefault();
+          const name = document.getElementById('playerName').value.trim().slice(0, 20);
+          if (!name) return;
+          this.bestRecord = { name, score: finalDistance, updatedAt: new Date().toISOString() };
+          localStorage.setItem('longlegs_best_record', JSON.stringify(this.bestRecord));
+          localStorage.setItem('longlegs_best', String(finalDistance));
+          this.showSavedRecord(finalDistance);
+          this.updateScoreUI();
+        });
+        document.getElementById('playerName').focus();
+      } else {
+        document.getElementById('restartBtn').addEventListener('click', () => this.start());
+      }
+    }
+
+    escapeHTML(value) {
+      return String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+    }
+
+    showSavedRecord(score) {
+      this.cardContent.innerHTML = `
+        <h1>SAVED!</h1>
+        <div class="subtitle">${score} m</div>
+        <p class="small">${this.escapeHTML(this.bestRecord.name)} · BEST SCORE</p>
+        <button class="primary-btn" id="restartBtn">TRY AGAIN</button>
+      `;
       document.getElementById('restartBtn').addEventListener('click', () => this.start());
     }
 
     updateScoreUI() {
       this.scoreEl.textContent = `${Math.floor(this.distance)} m`;
-      this.bestScoreEl.textContent = `BEST ${this.bestScore} m`;
+      this.bestScoreEl.textContent = `BEST ${this.bestScore} m${this.bestRecord?.name ? ` · ${this.bestRecord.name}` : ''}`;
     }
 
     update(dt) {
       if (!this.running) return;
 
       const isStretching = this.inputManager.isStretching;
-      const speedMult = 1.0 + Math.min(1.2, this.distance / 2000);
+      const speedMult = 1.0 + Math.min(1.35, this.distance / 1500);
 
       this.player.update(
         dt,
@@ -891,6 +1075,17 @@
       // Platform generation update
       this.platformManager.update(this.player.x, this.W, this.distance);
 
+      // Give the player a short, readable warning before the next special platform.
+      const nextPlatform = this.platformManager.platforms.find((platform) => platform.x + platform.w > this.player.x + this.player.bodyW);
+      const warningDistance = nextPlatform ? nextPlatform.x - (this.player.x + this.player.bodyW) : Infinity;
+      if (warningDistance < 520 && nextPlatform?.isNarrow) {
+        this.hintEl.textContent = 'NARROW PLATFORM AHEAD — RELEASE';
+      } else if (warningDistance < 520 && nextPlatform?.isStretchGap) {
+        this.hintEl.textContent = this.inputManager.isTouchDevice ? 'WIDE GAP AHEAD — HOLD TO STRETCH' : 'WIDE GAP AHEAD — HOLD SPACE';
+      } else {
+        this.hintEl.textContent = this.inputManager.isTouchDevice ? 'HOLD TO STRETCH • RELEASE TO SHORTEN' : 'HOLD SPACE TO STRETCH • RELEASE TO SHORTEN';
+      }
+
       // Particle update
       this.particleManager.update(dt);
 
@@ -910,6 +1105,8 @@
       // Background (#f4f4f0)
       this.ctx.fillStyle = '#f4f4f0';
       this.ctx.fillRect(0, 0, this.W, this.H);
+
+      this.drawSky(this.ctx, performance.now());
 
       this.ctx.save();
       if (this.screenShake > 0) {
@@ -936,18 +1133,33 @@
         this.ctx.stroke();
       }
 
-      // Draw Platforms (All platforms identical in shape & style: solid black with crisp white top line)
+      const seaY = this.H - 14;
+      const waveTime = performance.now();
+      this.drawSeaWaves(this.ctx, waveTime, 'back');
+
+      // Draw T-shaped platforms: a wide landing cap with a centered support column.
       for (const pl of this.platformManager.platforms) {
         const sx = pl.x - this.camX;
         if (sx + pl.w < -50 || sx > this.W + 50) continue;
 
         this.ctx.fillStyle = '#111111';
-        this.ctx.fillRect(sx, pl.y, pl.w, this.H - pl.y);
+        const capHeight = Math.min(36, Math.max(18, pl.h * 0.9));
+        const stemWidth = Math.min(24, Math.max(14, pl.w * 0.28));
+        this.ctx.fillRect(sx, pl.y, pl.w, capHeight);
+        this.ctx.fillRect(
+          sx + (pl.w - stemWidth) / 2,
+          pl.y + capHeight,
+          stemWidth,
+          Math.max(0, this.H + 4 - pl.y - capHeight)
+        );
 
         // Uniform crisp white top line accent
         this.ctx.fillStyle = '#ffffff';
         this.ctx.fillRect(sx, pl.y, pl.w, 3);
       }
+
+      // Layer two and the dark foreground wave pass in front of the supports.
+      this.drawSeaWaves(this.ctx, waveTime, 'front');
 
       // Draw Dust Particles
       this.particleManager.draw(this.ctx, this.camX);
@@ -956,6 +1168,140 @@
       this.player.draw(this.ctx, this.camX);
 
       this.ctx.restore();
+    }
+
+    drawSeaWaves(ctx, time, segment = 'all') {
+      ctx.save();
+      const drawWaveLayer = (peakY, troughY, waveLength, speed, phaseOffset, color) => {
+        const shift = (time * speed + phaseOffset) % waveLength;
+        let x = -waveLength - shift;
+        const bottomY = this.H + 4;
+        ctx.beginPath();
+        ctx.moveTo(x, bottomY);
+        ctx.lineTo(x, peakY);
+        while (x < this.W + waveLength) {
+          ctx.bezierCurveTo(
+            x + waveLength * 0.14, peakY + (troughY - peakY) * 0.48,
+            x + waveLength * 0.22, troughY,
+            x + waveLength * 0.5, troughY
+          );
+          ctx.bezierCurveTo(
+            x + waveLength * 0.78, troughY,
+            x + waveLength * 0.86, peakY + (troughY - peakY) * 0.48,
+            x + waveLength, peakY
+          );
+          x += waveLength;
+        }
+        ctx.lineTo(this.W + waveLength, bottomY);
+        ctx.closePath();
+        ctx.fillStyle = color;
+        ctx.fill();
+      };
+
+      // Layer one sits behind the columns; the second layer sits in front.
+      if (segment !== 'front') {
+        drawWaveLayer(this.H - 42, this.H - 23, 108, 0.006, 12, '#555555');
+      }
+      if (segment === 'back') {
+        ctx.restore();
+        return;
+      }
+      drawWaveLayer(this.H - 32, this.H - 14, 82, 0.011, 38, '#333333');
+
+      // Repeating peaked crests with rounded troughs, matching the supplied reference.
+      // Extend slightly beyond the canvas edge to prevent a light seam below the wave.
+      const bottomY = this.H + 4;
+      const waveLength = 60;
+      const peakY = this.H - 22;
+      const troughY = this.H - 5;
+      const phaseShift = (time * 0.018) % waveLength;
+      ctx.beginPath();
+      ctx.moveTo(0, bottomY);
+      let x = -waveLength - phaseShift;
+      ctx.lineTo(x, peakY);
+      while (x < this.W + waveLength) {
+        ctx.bezierCurveTo(
+          x + waveLength * 0.14, peakY + 8,
+          x + waveLength * 0.22, troughY,
+          x + waveLength * 0.5, troughY
+        );
+        ctx.bezierCurveTo(
+          x + waveLength * 0.78, troughY,
+          x + waveLength * 0.86, peakY + 8,
+          x + waveLength, peakY
+        );
+        x += waveLength;
+      }
+      ctx.lineTo(this.W, bottomY);
+      ctx.closePath();
+      ctx.fillStyle = '#111111';
+      ctx.fill();
+      ctx.restore();
+    }
+
+    drawSky(ctx, time) {
+      // A warm, quiet sun with slowly breathing rays.
+      const sunX = this.W * 0.82;
+      const sunY = Math.max(76, this.H * 0.19);
+      const pulse = 1 + Math.sin(time * 0.0012) * 0.035;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(17, 17, 17, 0.14)';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 12; i++) {
+        const angle = (Math.PI * 2 * i) / 12 + time * 0.00008;
+        const inner = 34 * pulse;
+        ctx.beginPath();
+        ctx.moveTo(sunX + Math.cos(angle) * inner, sunY + Math.sin(angle) * inner);
+        ctx.lineTo(sunX + Math.cos(angle) * (inner + 9), sunY + Math.sin(angle) * (inner + 9));
+        ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(17, 17, 17, 0.08)';
+      ctx.beginPath();
+      ctx.arc(sunX, sunY, 27 * pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(17, 17, 17, 0.28)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Clouds drift at different speeds to add a little depth without hiding gameplay.
+      const cloudCycle = this.W + 220;
+      const clouds = [
+        { x: 100, y: 0.27, s: 0.82, speed: 0.008 },
+        { x: 420, y: 0.13, s: 1.08, speed: 0.012 },
+        { x: 760, y: 0.34, s: 0.72, speed: 0.006 },
+        { x: 1080, y: 0.23, s: 0.92, speed: 0.01 }
+      ];
+      for (const cloud of clouds) {
+        let x = ((cloud.x - this.camX * 0.18 + time * cloud.speed) % cloudCycle + cloudCycle) % cloudCycle - 100;
+        const y = this.H * cloud.y;
+        ctx.fillStyle = 'rgba(17, 17, 17, 0.055)';
+        ctx.beginPath();
+        ctx.ellipse(x, y, 30 * cloud.s, 10 * cloud.s, 0, 0, Math.PI * 2);
+        ctx.ellipse(x - 17 * cloud.s, y + 2 * cloud.s, 15 * cloud.s, 8 * cloud.s, 0, 0, Math.PI * 2);
+        ctx.ellipse(x + 16 * cloud.s, y + 1 * cloud.s, 19 * cloud.s, 9 * cloud.s, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Small groups of birds flap gently across the distant sky.
+      const birdCycle = this.W + 300;
+      for (let group = 0; group < 3; group++) {
+        const baseX = ((160 + group * 390 - this.camX * 0.32 + time * (0.035 + group * 0.006)) % birdCycle + birdCycle) % birdCycle - 130;
+        const baseY = this.H * (0.23 + group * 0.075);
+        for (let bird = 0; bird < 3; bird++) {
+          const x = baseX + bird * 17;
+          const y = baseY + Math.sin(time * 0.0015 + bird + group) * 3 + bird * 4;
+          const flap = Math.sin(time * 0.008 + bird * 1.7 + group) * 4;
+          ctx.strokeStyle = 'rgba(17, 17, 17, 0.42)';
+          ctx.lineWidth = 2;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(x - 6, y + flap);
+          ctx.quadraticCurveTo(x - 2, y - 2, x, y);
+          ctx.quadraticCurveTo(x + 3, y - 2, x + 7, y + flap);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
     }
 
     loop(timestamp) {

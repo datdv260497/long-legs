@@ -67,6 +67,23 @@
     border-radius: 4px;
     transition: background 0.15s, color 0.15s;
   }
+  .header-actions {
+    display: flex;
+    gap: 8px;
+  }
+  #pauseBtn {
+    pointer-events: auto;
+    background: none;
+    border: 2px solid #111111;
+    color: #111111;
+    padding: 8px 12px;
+    font-weight: 800;
+    font-size: 12px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+  #pauseBtn:disabled { opacity: 0.4; cursor: default; }
   #audioBtn:hover {
     background: #111111;
     color: #f4f4f0;
@@ -74,14 +91,22 @@
   #hint {
     position: absolute;
     left: 50%;
-    bottom: 24px;
+    top: 76px;
     transform: translateX(-50%);
-    font-size: 13px;
+    max-width: calc(100% - 32px);
+    padding: 8px 12px;
+    background: rgba(244, 244, 240, 0.82);
+    font-size: 12px;
     font-weight: 800;
-    letter-spacing: 2px;
+    letter-spacing: 1.2px;
     opacity: 0.6;
     text-align: center;
     pointer-events: none;
+    white-space: normal;
+  }
+  body.game-over .header-bar,
+  body.game-over #hint {
+    visibility: hidden;
   }
   #overlay {
     position: absolute;
@@ -89,7 +114,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(244, 244, 240, 0.92);
+    background: rgba(244, 244, 240, 0.98);
     pointer-events: auto;
     backdrop-filter: blur(4px);
     transition: opacity 0.2s ease;
@@ -138,6 +163,31 @@
   button.primary-btn:active {
     transform: scale(0.96);
   }
+  .name-input {
+    display: block;
+    width: min(280px, 100%);
+    margin: 18px auto 0;
+    padding: 12px 14px;
+    border: 2px solid #111;
+    background: transparent;
+    color: #111;
+    font: inherit;
+    font-weight: 700;
+    text-align: center;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .secondary-btn {
+    margin: 18px 8px 0;
+    padding: 12px 18px;
+    border: 2px solid #111;
+    background: transparent;
+    color: #111;
+    font-size: 13px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    cursor: pointer;
+  }
   .hidden {
     display: none !important;
   }
@@ -151,14 +201,17 @@
       <div id="score">0 m</div>
       <div id="bestScore">BEST 0 m</div>
     </div>
-    <button id="audioBtn">AUDIO: ON</button>
+    <div class="header-actions">
+      <button id="pauseBtn" disabled>PAUSE</button>
+      <button id="audioBtn">AUDIO: ON</button>
+    </div>
   </div>
   <div id="hint">HOLD SPACE TO STRETCH</div>
   <div id="overlay">
     <div class="card" id="cardContent">
       <h1>LONG<br>LEGS</h1>
       <div class="subtitle">WALK. STRETCH. SURVIVE.</div>
-      <p class="small" id="controlHint">HOLD SPACE TO MAKE YOUR STEPS WIDER</p>
+      <p class="small" id="controlHint">HOLD TO STRETCH · RELEASE ON NARROW PLATFORMS</p>
       <button class="primary-btn" id="startBtn">START</button>
     </div>
   </div>
