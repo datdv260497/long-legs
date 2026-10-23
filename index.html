@@ -54,6 +54,12 @@
     letter-spacing: 1px;
     opacity: 0.55;
   }
+  #difficulty {
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 1.2px;
+    opacity: 0.72;
+  }
   #audioBtn {
     pointer-events: auto;
     background: none;
@@ -107,6 +113,41 @@
   body.game-over .header-bar,
   body.game-over #hint {
     visibility: hidden;
+  }
+  body.compact-fail .header-bar,
+  body.compact-fail #hint {
+    visibility: visible;
+  }
+  body.compact-fail #overlay {
+    inset: 18% auto auto 50%;
+    width: max-content;
+    max-width: calc(100% - 28px);
+    height: auto;
+    transform: translate(-50%, 0);
+    background: transparent;
+    backdrop-filter: none;
+    pointer-events: none;
+  }
+  body.compact-fail .card {
+    width: auto;
+    max-width: 360px;
+    padding: 18px 22px;
+    border: 2px solid #111;
+    background: rgba(244, 244, 240, 0.94);
+    pointer-events: auto;
+  }
+  body.compact-fail h1 {
+    margin: 0 0 8px;
+    font-size: 30px;
+    line-height: 1;
+    letter-spacing: -1px;
+  }
+  body.compact-fail .subtitle { margin-bottom: 6px; font-size: 13px; }
+  body.compact-fail p { font-size: 10px; }
+  body.compact-fail button.primary-btn {
+    margin-top: 10px;
+    padding: 10px 18px;
+    font-size: 14px;
   }
   #overlay {
     position: absolute;
@@ -200,6 +241,7 @@
     <div class="score-container">
       <div id="score">0 m</div>
       <div id="bestScore">BEST 0 m</div>
+      <div id="difficulty">EASY · 0</div>
     </div>
     <div class="header-actions">
       <button id="pauseBtn" disabled>PAUSE</button>

@@ -302,9 +302,11 @@
     }
 
     getDifficultyTier(distance) {
-      if (distance < 200) return 'EASY';
-      if (distance < 500) return 'NORMAL';
-      if (distance < 1000) return 'HARD';
+      // Increase the course challenge every 100m, then cap the label at EXTREME.
+      const level = Math.floor(Math.max(0, distance) / 100);
+      if (level === 0) return 'EASY';
+      if (level === 1) return 'NORMAL';
+      if (level === 2) return 'HARD';
       return 'EXTREME';
     }
 
@@ -318,10 +320,11 @@
       // 2. NARROW PRECISION PLATFORM (Narrow width: 58-70px in EASY -> REQUIRES RELEASING SPACE)
       // 3. RECOVERY LANDING PLATFORM (Extra wide: 220-280px after narrow platforms)
 
-      const narrowInterval = distance < 250 ? 5 : distance < 650 ? 4 : 3;
-      const extraNarrowPlatform = distance >= 650 && this.platformCount % (distance >= 1200 ? 5 : 7) === 0;
+      const difficultyLevel = Math.floor(Math.max(0, distance) / 100);
+      const narrowInterval = difficultyLevel < 1 ? 5 : difficultyLevel < 3 ? 4 : 3;
+      const extraNarrowPlatform = difficultyLevel >= 6 && this.platformCount % (difficultyLevel >= 12 ? 5 : 7) === 0;
       const isNarrowPlatform = this.platformCount % narrowInterval === 0 || extraNarrowPlatform;
-      const stretchInterval = distance < 250 ? 3 : 2;
+      const stretchInterval = difficultyLevel < 2 ? 3 : 2;
       const isStretchGap = !isNarrowPlatform && this.platformCount % stretchInterval === 0;
 
       let gap, width, height;
@@ -329,12 +332,13 @@
       if (prev.isNarrow) {
         // A recovery platform remains after each precision landing, gradually shrinking at higher scores.
         gap = Math.floor(this.rng.range(32, 42));
-        const recoveryScale = Math.max(0.68, 1 - Math.max(0, distance - 200) / 2500);
+        const recoveryScale = Math.max(0.62, 1 - difficultyLevel * 0.025);
         width = Math.floor(this.rng.range(220, 280) * recoveryScale);
       } else if (isNarrowPlatform) {
         // Precision platforms become slightly narrower as the score rises.
         gap = Math.floor(this.rng.range(35, 45));
-        const narrowWidth = tier === 'EASY' ? [58, 70] : tier === 'NORMAL' ? [48, 58] : tier === 'HARD' ? [44, 52] : [40, 48];
+        const baseNarrowWidth = tier === 'EASY' ? [58, 70] : tier === 'NORMAL' ? [48, 58] : tier === 'HARD' ? [44, 52] : [40, 48];
+        const narrowWidth = [Math.max(34, baseNarrowWidth[0] - Math.max(0, difficultyLevel - 3)), Math.max(40, baseNarrowWidth[1] - Math.max(0, difficultyLevel - 3))];
         width = Math.floor(this.rng.range(narrowWidth[0], narrowWidth[1]));
       } else if (isStretchGap) {
         // Wide Gap requiring MAX_LEG_LENGTH stretch (80px to 175px)
@@ -357,6 +361,10 @@
             width = Math.floor(this.rng.range(90, 140));
             break;
         }
+        // At each 100m milestone, stretch gaps grow slightly and landing areas tighten.
+        const extraChallenge = Math.max(0, difficultyLevel - 3);
+        gap = Math.min(190, gap + Math.floor(extraChallenge * 1.5));
+        width = Math.max(75, width - extraChallenge * 3);
       } else {
         // Standard Walk Platform
         gap = Math.floor(this.rng.range(35, 50));
@@ -375,10 +383,13 @@
             width = Math.floor(this.rng.range(75, 120));
             break;
         }
+        const extraChallenge = Math.max(0, difficultyLevel - 3);
+        gap = Math.min(70, gap + extraChallenge);
+        width = Math.max(55, width - extraChallenge * 2);
       }
 
       // Height is constant (50) in EASY mode to prevent early vertical stumbling!
-      height = (tier === 'EASY') ? 50 : Math.floor(this.rng.range(25, 80));
+      height = (difficultyLevel === 0) ? 50 : Math.floor(this.rng.range(25, 80));
 
       const newX = prev.x + prev.w + gap;
       const newY = this.groundY - height;
@@ -504,6 +515,7 @@
 
       this.bodyRotation = 0;
       this.bodyWobble = 0;
+      this.hurtUntil = 0;
       this.isFalling = false;
       this.fallRotation = 0;
       this.onGround = true;
@@ -637,7 +649,9 @@
         ctx.translate(-(sx + this.bodyW / 2), -(sy + this.bodyH / 2));
       } else {
         ctx.translate(sx + this.bodyW / 2, sy + this.bodyH / 2);
-        ctx.rotate(this.bodyRotation);
+        const hurtTime = performance.now();
+        const isHurt = hurtTime < this.hurtUntil;
+        ctx.rotate(this.bodyRotation + (isHurt ? Math.sin(hurtTime * 0.06) * 0.18 : 0));
         ctx.translate(-(sx + this.bodyW / 2), -(sy + this.bodyH / 2));
       }
 
@@ -646,8 +660,14 @@
       this.drawLeg(ctx, this.rightLeg, hipX, hipY, camX);
 
       // Original square head silhouette.
-      ctx.fillStyle = '#111111';
+      const isHurt = performance.now() < this.hurtUntil;
+      ctx.fillStyle = isHurt ? '#ffffff' : '#111111';
       ctx.fillRect(sx, sy, this.bodyW, this.bodyH);
+      if (isHurt) {
+        ctx.strokeStyle = '#111111';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(sx, sy, this.bodyW, this.bodyH);
+      }
 
       this.drawFace(ctx, sx, sy);
       this.drawCrown(ctx, sx, sy);
@@ -778,6 +798,94 @@
   // ==========================================
   // 7. PARTICLES & VISUAL POLISH
   // ==========================================
+  class BirdManager {
+    constructor() {
+      this.birds = [];
+      this.nextSpawnX = 0;
+    }
+
+    reset(playerX) {
+      this.birds = [];
+      this.nextSpawnX = playerX + 700 + Math.random() * 450;
+    }
+
+    update(playerX, groundY, time) {
+      let birdEnteredView = false;
+      if (playerX + 900 >= this.nextSpawnX) {
+        const y = groundY - (132 + Math.random() * 20);
+        this.birds.push({ x: this.nextSpawnX, y, flightY: y, w: 42, h: 24, phase: Math.random() * Math.PI * 2, attackStartedAt: null, hit: false, soundPlayed: false });
+        this.nextSpawnX += 700 + Math.random() * 550;
+      }
+      this.birds = this.birds.filter((bird) => bird.x + bird.w > playerX - 100);
+      for (const bird of this.birds) {
+        bird.wing = Math.sin(time * 0.018 + bird.phase) * 7;
+        if (!bird.soundPlayed && bird.x - playerX < Math.max(260, window.innerWidth * 0.82)) {
+          bird.soundPlayed = true;
+          birdEnteredView = true;
+        }
+        const distanceAhead = bird.x - playerX;
+        if (bird.attackStartedAt === null && distanceAhead < 260 && distanceAhead > 70) {
+          bird.attackStartedAt = time;
+        }
+        if (bird.attackStartedAt !== null) {
+          const progress = Math.min(1, (time - bird.attackStartedAt) / 1050);
+          const diveY = groundY - 126;
+          const diveAmount = progress < 0.68
+            ? Math.sin((progress / 0.68) * Math.PI / 2)
+            : Math.cos(((progress - 0.68) / 0.32) * Math.PI / 2);
+          bird.y = bird.flightY + (diveY - bird.flightY) * diveAmount;
+        }
+      }
+      return birdEnteredView;
+    }
+
+    collidesWith(player) {
+      const playerLeft = player.x + 2;
+      const playerRight = player.x + player.bodyW - 2;
+      const playerTop = player.y + 2;
+      const playerBottom = player.y + player.bodyH - 2;
+      const bird = this.birds.find((bird) => !bird.hit &&
+        playerRight > bird.x + 5 && playerLeft < bird.x + bird.w - 5 &&
+        playerBottom > bird.y + 4 && playerTop < bird.y + bird.h - 4
+      );
+      if (bird) bird.hit = true;
+      return bird || null;
+    }
+
+    getUpcoming(player) {
+      return this.birds.find((bird) => bird.x + bird.w > player.x + player.bodyW && bird.x < player.x + 620);
+    }
+
+    draw(ctx, camX) {
+      for (const bird of this.birds) {
+        const x = bird.x - camX;
+        if (x + bird.w < -40 || x > ctx.canvas.width + 40) continue;
+        const centerX = x + bird.w / 2;
+        const centerY = bird.y + bird.h / 2;
+        ctx.save();
+        ctx.strokeStyle = '#111111';
+        ctx.fillStyle = '#111111';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.ellipse(centerX, centerY, 9, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(centerX - 2, centerY);
+        ctx.quadraticCurveTo(centerX - 12, centerY - 7 - bird.wing, centerX - 19, centerY - bird.wing);
+        ctx.moveTo(centerX + 2, centerY);
+        ctx.quadraticCurveTo(centerX + 12, centerY - 7 - bird.wing, centerX + 19, centerY - bird.wing);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(centerX + 8, centerY);
+        ctx.lineTo(centerX + 15, centerY + 2);
+        ctx.lineTo(centerX + 8, centerY + 4);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
+
   class ParticleManager {
     constructor() {
       this.particles = [];
@@ -826,6 +934,7 @@
       this.ctx = this.canvas.getContext('2d');
       this.scoreEl = document.getElementById('score');
       this.bestScoreEl = document.getElementById('bestScore');
+      this.difficultyEl = document.getElementById('difficulty');
       this.overlay = document.getElementById('overlay');
       this.cardContent = document.getElementById('cardContent');
       this.startBtn = document.getElementById('startBtn');
@@ -836,19 +945,26 @@
 
       this.ytAdapter = new YouTubePlayablesAdapter();
       this.audioManager = new AudioManager();
-      this.music = new Audio('./assets/ocean-ambience.mp3');
+      this.music = new Audio('./assets/ll2.mp3');
       this.music.loop = true;
-      this.music.volume = 0.16;
+      this.music.volume = 0.12;
+      this.birdAudio = new Audio('./assets/bird-call.mp3');
+      this.birdAudio.volume = 0.32;
+      this.birdAudioTimer = null;
+      this.gameOverAudio = new Audio('./assets/game-over.mp3');
+      this.gameOverAudio.volume = 0.55;
       this.inputManager = new InputManager(() => this.onInputTrigger());
       this.platformManager = new PlatformManager();
       this.player = new Player();
       this.particleManager = new ParticleManager();
+      this.birdManager = new BirdManager();
 
       this.W = window.innerWidth;
       this.H = window.innerHeight;
       this.DPR = Math.min(window.devicePixelRatio || 1, 2);
       this.camX = 0;
       this.distance = 0;
+      this.difficultyLevel = 0;
       this.bestScore = 0;
       this.bestRecord = null;
 
@@ -878,9 +994,13 @@
         (enabled) => {
           this.audioManager.setMute(!enabled);
           this.music.muted = !enabled;
+          this.birdAudio.muted = !enabled;
+          this.gameOverAudio.muted = !enabled;
         }
       );
       this.music.muted = !this.ytAdapter.isAudioEnabled();
+      this.birdAudio.muted = !this.ytAdapter.isAudioEnabled();
+      this.gameOverAudio.muted = !this.ytAdapter.isAudioEnabled();
 
       // Load best score from YT SDK or LocalStorage
       const ytScore = await this.ytAdapter.loadScore();
@@ -895,6 +1015,8 @@
       this.audioBtn.addEventListener('click', () => {
         const isMuted = this.audioManager.toggleMute();
         this.music.muted = isMuted;
+        this.birdAudio.muted = isMuted;
+        this.gameOverAudio.muted = isMuted;
         this.audioBtn.textContent = `AUDIO: ${isMuted ? 'OFF' : 'ON'}`;
       });
       this.pauseBtn.addEventListener('click', () => this.togglePause());
@@ -931,6 +1053,7 @@
       this.paused = true;
       this.audioManager.stopStretchSound();
       this.music.pause();
+      this.birdAudio.pause();
       this.cardContent.innerHTML = `
         <h1>PAUSED</h1>
         <p class="small">TAKE A BREATHER</p>
@@ -961,10 +1084,14 @@
     start() {
       this.audioManager.init();
       this.platformManager.reset(this.H);
+      this.birdManager.reset(this.player.x);
+      this.gameOverAudio.pause();
+      this.gameOverAudio.currentTime = 0;
       this.player.reset();
       this.player.initPosition(this.platformManager.platforms[0].y);
 
       this.distance = 0;
+      this.difficultyLevel = 0;
       this.camX = 0;
       this.running = true;
       this.paused = false;
@@ -972,11 +1099,13 @@
       this.pauseBtn.textContent = 'PAUSE';
       this.pauseBtn.disabled = false;
       document.body.classList.remove('game-over');
+      document.body.classList.remove('bird-fail');
+      document.body.classList.remove('compact-fail');
       this.overlay.classList.add('hidden');
       this.music.play().catch(() => {});
     }
 
-    triggerGameOver() {
+    triggerGameOver(cause = 'fall') {
       if (this.gameOver) return;
       this.gameOver = true;
       this.running = false;
@@ -984,10 +1113,19 @@
       this.pauseBtn.textContent = 'PAUSE';
       this.pauseBtn.disabled = true;
       this.music.pause();
+      this.birdAudio.pause();
+      this.gameOverAudio.pause();
       document.body.classList.add('game-over');
+      document.body.classList.toggle('bird-fail', cause === 'bird');
+      document.body.classList.toggle('compact-fail', cause === 'bird' || Math.floor(this.distance) < 1000);
       this.screenShake = 14;
 
       const finalDistance = Math.floor(this.distance);
+      const hasWon = finalDistance >= 1000;
+      if (!hasWon && !this.gameOverAudio.muted) {
+        this.gameOverAudio.currentTime = 0;
+        this.gameOverAudio.play().catch(() => {});
+      }
       let isNewBest = false;
       if (finalDistance > this.bestScore) {
         this.bestScore = finalDistance;
@@ -998,17 +1136,17 @@
       this.updateScoreUI();
 
       this.cardContent.innerHTML = isNewBest ? `
-        <h1>YOU<br>WIN!</h1>
+        <h1>${hasWon ? 'YOU<br>WIN!' : cause === 'bird' ? 'FAIL' : 'YOU<br>LOSE'}</h1>
         <div class="subtitle">${finalDistance} m</div>
-        <p class="small">NEW BEST SCORE · ENTER YOUR NAME</p>
+        <p class="small">${hasWon ? 'YOU REACHED THE FINISH · NEW BEST SCORE' : cause === 'bird' ? 'HIT BY A BIRD · NEW BEST SCORE' : 'YOU LOSE · NEW BEST SCORE'} · ENTER YOUR NAME</p>
         <form id="recordForm">
           <input class="name-input" id="playerName" name="playerName" maxlength="20" autocomplete="nickname" placeholder="Your name" required>
           <button class="primary-btn" type="submit">SAVE SCORE</button>
         </form>
       ` : `
-        <h1>FALL!</h1>
+        <h1>${hasWon ? 'YOU<br>WIN!' : cause === 'bird' ? 'FAIL' : 'FALL!'}</h1>
         <div class="subtitle">${finalDistance} m</div>
-        <p class="small">BEST ${this.bestScore} m${this.bestRecord?.name ? ` · ${this.escapeHTML(this.bestRecord.name)}` : ''}</p>
+        <p class="small">${hasWon ? '1,000 M · FINISH REACHED' : cause === 'bird' ? 'HIT BY A BIRD' : 'YOU LOSE · REACH 1,000 M TO WIN'}<br>BEST ${this.bestScore} m${this.bestRecord?.name ? ` · ${this.escapeHTML(this.bestRecord.name)}` : ''}</p>
         <button class="primary-btn" id="restartBtn">TRY AGAIN</button>
       `;
       this.overlay.classList.remove('hidden');
@@ -1046,6 +1184,19 @@
     updateScoreUI() {
       this.scoreEl.textContent = `${Math.floor(this.distance)} m`;
       this.bestScoreEl.textContent = `BEST ${this.bestScore} m${this.bestRecord?.name ? ` · ${this.bestRecord.name}` : ''}`;
+      const level = Math.floor(Math.max(0, this.distance) / 100);
+      const tier = level === 0 ? 'EASY' : level === 1 ? 'NORMAL' : level === 2 ? 'HARD' : 'EXTREME';
+      this.difficultyEl.textContent = `${tier} · ${level + 1}`;
+    }
+
+    playBirdCall() {
+      if (this.audioManager.isMuted) return;
+      if (this.birdAudioTimer) clearTimeout(this.birdAudioTimer);
+      this.birdAudio.pause();
+      this.birdAudio.currentTime = 0;
+      this.birdAudio.play().catch(() => {});
+      // Play a short 1.8 second excerpt from the supplied recording.
+      this.birdAudioTimer = setTimeout(() => this.birdAudio.pause(), 1800);
     }
 
     update(dt) {
@@ -1070,7 +1221,27 @@
 
       // Update distance score based on player X position
       this.distance = Math.max(0, (this.player.x - 90) * 0.05);
+      const difficultyLevel = Math.floor(this.distance / 100);
+      if (difficultyLevel > this.difficultyLevel) {
+        this.difficultyLevel = difficultyLevel;
+        const tier = difficultyLevel === 1 ? 'NORMAL' : difficultyLevel === 2 ? 'HARD' : 'EXTREME';
+        this.hintEl.textContent = `${Math.floor(this.distance / 100) * 100} M · ${tier} — STAY SHARP!`;
+        this.hintEl.dataset.milestoneUntil = String(performance.now() + 1800);
+      }
       this.updateScoreUI();
+
+      const birdEnteredView = this.birdManager.update(this.player.x, this.platformManager.groundY, performance.now());
+      if (birdEnteredView) this.playBirdCall();
+      if (this.birdManager.collidesWith(this.player)) {
+        this.triggerGameOver('bird');
+        return;
+      }
+
+      // Reaching the 1,000m finish ends the run as a win.
+      if (this.distance >= 1000) {
+        this.triggerGameOver();
+        return;
+      }
 
       // Platform generation update
       this.platformManager.update(this.player.x, this.W, this.distance);
@@ -1078,7 +1249,13 @@
       // Give the player a short, readable warning before the next special platform.
       const nextPlatform = this.platformManager.platforms.find((platform) => platform.x + platform.w > this.player.x + this.player.bodyW);
       const warningDistance = nextPlatform ? nextPlatform.x - (this.player.x + this.player.bodyW) : Infinity;
-      if (warningDistance < 520 && nextPlatform?.isNarrow) {
+      const upcomingBird = this.birdManager.getUpcoming(this.player);
+      const birdWarningDistance = upcomingBird ? upcomingBird.x - (this.player.x + this.player.bodyW) : Infinity;
+      if (Number(this.hintEl.dataset.milestoneUntil || 0) > performance.now()) {
+        // Keep the milestone callout visible briefly before returning to platform warnings.
+      } else if (upcomingBird && birdWarningDistance < 520) {
+        this.hintEl.textContent = this.inputManager.isTouchDevice ? 'BIRD AHEAD — HOLD TO RAISE YOUR LEGS' : 'BIRD AHEAD — HOLD SPACE TO DODGE';
+      } else if (warningDistance < 520 && nextPlatform?.isNarrow) {
         this.hintEl.textContent = 'NARROW PLATFORM AHEAD — RELEASE';
       } else if (warningDistance < 520 && nextPlatform?.isStretchGap) {
         this.hintEl.textContent = this.inputManager.isTouchDevice ? 'WIDE GAP AHEAD — HOLD TO STRETCH' : 'WIDE GAP AHEAD — HOLD SPACE';
@@ -1136,6 +1313,8 @@
       const seaY = this.H - 14;
       const waveTime = performance.now();
       this.drawSeaWaves(this.ctx, waveTime, 'back');
+
+      this.birdManager.draw(this.ctx, this.camX);
 
       // Draw T-shaped platforms: a wide landing cap with a centered support column.
       for (const pl of this.platformManager.platforms) {
